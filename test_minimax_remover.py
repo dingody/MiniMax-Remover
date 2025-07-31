@@ -10,9 +10,9 @@ random_seed = 42
 # video_length will be set dynamically
 device = torch.device("cuda:0")
 
-# Get video info first
-video_path = "./video.mp4"
-mask_path = "./mask.mp4"
+# Get video info first - Colab paths
+video_path = "/content/input_fixed.mp4"
+mask_path = "/content/mask_fixed.mp4"
 
 vae = AutoencoderKLWan.from_pretrained("./vae", torch_dtype=torch.float16)
 transformer = Transformer3DModel.from_pretrained("./transformer", torch_dtype=torch.float16)
@@ -40,7 +40,7 @@ def inference(pixel_values, masks, video_length, iterations=2):
         generator=torch.Generator(device=device).manual_seed(random_seed),
         iterations=iterations  # Reduced from 6 to 2
     ).frames[0]
-    export_to_video(video, "./output.mp4")
+    export_to_video(video, "/content/output_fixed.mp4")
 
 def load_video(video_path, max_frames=None):
     vr = VideoReader(video_path)
