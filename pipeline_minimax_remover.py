@@ -78,9 +78,19 @@ class Minimax_Remover_Pipeline(DiffusionPipeline):
         masks2 = []
         for i in range(len(masks)):
             mask = masks[i]
-            mask = mask > 0
-            mask = scipy.ndimage.binary_dilation(mask, iterations=iterations)
-            masks2.append(mask)
+            mask = mask > 0.5  # Use threshold instead of >0 for better precision
+            
+            if iterations > 0:
+                # Use erosion followed by dilation for cleaner edges
+                import cv2
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (iterations*2+1, iterations*2+1))
+                mask = mask.astype(np.uint8) * 255
+                # Light dilation to ensure coverage, but preserve edges
+                mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+                mask = mask > 127
+            
+            masks2.append(mask.astype(np.float32))
+        
         masks = np.array(masks2).astype(np.float32)
         masks = torch.from_numpy(masks)
         masks = masks.repeat(1,1,1,3)
@@ -91,7 +101,8 @@ class Minimax_Remover_Pipeline(DiffusionPipeline):
     def resize(self, images, w, h):
         bsz,_,_,_,_ = images.shape
         images = rearrange(images, "b c f w h -> (b f) c w h")
-        images = F.interpolate(images, (w,h), mode='bilinear')
+        # Use bicubic for better quality, especially for text
+        images = F.interpolate(images, (w,h), mode='bicubic', align_corners=False)
         images = rearrange(images, "(b f) c w h -> b c f w h", b=bsz)
         return images
 

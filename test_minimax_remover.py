@@ -22,12 +22,12 @@ pipe = Minimax_Remover_Pipeline(transformer=transformer, vae=vae, scheduler=sche
 pipe.to(device)
 
 # the iterations is the hyperparameter for mask dilation
-def inference(pixel_values, masks, video_length, output_fps, iterations=3):
-    # Back to working resolution and parameters
+def inference(pixel_values, masks, video_length, output_fps, iterations=1):
+    # Improve resolution for better quality while staying within memory limits
     # Keep aspect ratio: 720/1280 = 0.5625
-    width = 512   # Back to previous working resolution
-    height = int(512 / 0.5625)  # = 910, round to 896
-    height = 896  # Previous working resolution
+    width = 576   # Increase resolution for better text quality
+    height = int(576 / 0.5625)  # = 1024
+    height = 1024  # Higher resolution for better text reconstruction
     
     print(f"Processing with resolution: {width}x{height}")
     print(f"Mask dilation iterations: {iterations}")
@@ -38,9 +38,9 @@ def inference(pixel_values, masks, video_length, output_fps, iterations=3):
         num_frames=video_length,
         height=height,
         width=width,
-        num_inference_steps=6,  # Back to working step count
+        num_inference_steps=12,  # Increase steps for better quality
         generator=torch.Generator(device=device).manual_seed(random_seed),
-        iterations=iterations  # Back to working iterations
+        iterations=iterations  # Reduce dilation to preserve sharp edges
     ).frames[0]
     
     # Clamp fps to reasonable range
@@ -93,9 +93,14 @@ def load_mask(mask_path, frame_indices):
     masks = vr.get_batch(actual_indices).asnumpy()
     masks = torch.from_numpy(masks)
     masks = masks[:, :, :, :1]
-    masks[masks > 20] = 255
-    masks[masks < 255] = 0
+    
+    # Better threshold processing for cleaner masks
+    # Use a more conservative threshold
+    masks[masks > 127] = 255  # Changed from 20 to 127 for cleaner masks
+    masks[masks <= 127] = 0   # Changed condition
     masks = masks / 255.0
+    
+    print(f"Mask stats: min={masks.min():.3f}, max={masks.max():.3f}, unique values={torch.unique(masks).numpy()}")
     return masks
 
 # Load video with dynamic frame count
