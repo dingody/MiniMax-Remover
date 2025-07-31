@@ -22,13 +22,13 @@ pipe = Minimax_Remover_Pipeline(transformer=transformer, vae=vae, scheduler=sche
 pipe.to(device)
 
 # the iterations is the hyperparameter for mask dilation
-def inference(pixel_values, masks, video_length, iterations=2):
-    # For 720x1280 video (width x height), use appropriate resolution
+def inference(pixel_values, masks, video_length, iterations=1):
+    # For 720x1280 video (width x height), use higher resolution for better quality
     # Keep aspect ratio: 720/1280 = 0.5625
-    # Use smaller resolution for L4 GPU
-    width = 512   # Corresponding to original width 720
-    height = int(512 / 0.5625)  # = 910, round to 896 for efficiency  
-    height = 896  # Corresponding to original height 1280
+    # Balance between quality and L4 GPU memory
+    width = 576   # Increased from 512, closer to original 720
+    height = int(576 / 0.5625)  # = 1024, exact match for aspect ratio
+    height = 1024  # Better match for original 1280
     
     video = pipe(
         images=pixel_values,
@@ -40,28 +40,35 @@ def inference(pixel_values, masks, video_length, iterations=2):
         generator=torch.Generator(device=device).manual_seed(random_seed),
         iterations=iterations  # Reduced from 6 to 2
     ).frames[0]
-    export_to_video(video, "/content/output_fixed.mp4")
+    # Export with proper fps to maintain video duration
+    export_to_video(video, "/content/output_fixed.mp4", fps=25)
 
 def load_video(video_path, max_frames=None):
     vr = VideoReader(video_path)
     total_frames = len(vr)
-    print(f"Total frames in video: {total_frames}")
+    fps = vr.get_avg_fps()
+    duration = total_frames / fps
+    print(f"Video info: {total_frames} frames, {fps:.2f} fps, {duration:.2f}s duration")
     
-    # For 15s video, limit to reasonable number of frames for L4 GPU
+    # For L4 GPU, increase frame limit but keep it reasonable
     if max_frames is None:
-        # For L4 GPU, limit to 60 frames max to avoid OOM
-        max_frames = min(60, total_frames)
+        # Allow more frames to preserve video length better
+        max_frames = min(120, total_frames)  # Increased from 60 to 120
     
-    # Sample frames evenly if video is longer
+    # Sample frames more evenly to preserve timing
     if total_frames > max_frames:
-        frame_indices = list(range(0, total_frames, total_frames // max_frames))[:max_frames]
+        # Use uniform sampling to maintain temporal consistency
+        step = total_frames / max_frames
+        frame_indices = [int(i * step) for i in range(max_frames)]
     else:
         frame_indices = list(range(total_frames))
     
-    print(f"Processing {len(frame_indices)} frames: {frame_indices[:5]}...")
+    print(f"Sampling {len(frame_indices)} frames from {total_frames} total frames")
+    print(f"Frame indices: {frame_indices[:5]}...{frame_indices[-5:] if len(frame_indices) > 5 else ''}")
+    
     images = vr.get_batch(frame_indices).asnumpy()
     images = torch.from_numpy(images)/127.5 - 1.0
-    return images, len(frame_indices)
+    return images, len(frame_indices), frame_indices
 
 def load_mask(mask_path, frame_indices):
     vr = VideoReader(mask_path)
@@ -83,18 +90,10 @@ def load_mask(mask_path, frame_indices):
     return masks
 
 # Load video with dynamic frame count
-images, video_length = load_video(video_path)
+images, video_length, frame_indices = load_video(video_path)
 print(f"Loaded video with {video_length} frames, shape: {images.shape}")
 
-# Get frame indices for mask loading
-if video_length <= 60:
-    frame_indices = list(range(video_length))
-else:
-    vr_temp = VideoReader(video_path)
-    total_frames = len(vr_temp)
-    frame_indices = list(range(0, total_frames, total_frames // video_length))[:video_length]
-    del vr_temp
-
+# Load corresponding masks
 masks = load_mask(mask_path, frame_indices)
 print(f"Loaded masks with shape: {masks.shape}")
 
