@@ -93,9 +93,21 @@ class Minimax_Remover_Pipeline(DiffusionPipeline):
         
         masks = np.array(masks2).astype(np.float32)
         masks = torch.from_numpy(masks)
-        masks = masks.repeat(1,1,1,3)
+        
+        # Add channel dimension if not present
+        if len(masks.shape) == 3:  # [f, h, w]
+            masks = masks[:, :, :, None]  # [f, h, w, 1]
+        
+        # Repeat for 3 channels (RGB)
+        masks = masks.repeat(1, 1, 1, 3)  # [f, h, w, 3]
+        
+        # Rearrange to [c, f, h, w]
         masks = rearrange(masks, "f h w c -> c f h w")
-        masks = masks[None,...]
+        
+        # Add batch dimension [1, c, f, h, w]
+        masks = masks[None, ...]
+        
+        print(f"Expand_masks output shape: {masks.shape}")
         return masks
 
     def resize(self, images, w, h):
@@ -163,6 +175,20 @@ class Minimax_Remover_Pipeline(DiffusionPipeline):
         images = rearrange(images, "f h w c -> c f h w")
         images = self.resize(images[None,...], height, width).to(device).half()
 
+        # Debug shapes
+        print(f"Images shape: {images.shape}")
+        print(f"Masks shape: {masks.shape}")
+        
+        # Ensure masks and images have compatible shapes
+        if masks.shape != images.shape:
+            # Adjust masks to match images dimensions
+            if len(masks.shape) == 5 and len(images.shape) == 5:
+                # Both are 5D, check channel dimension
+                if masks.shape[1] != images.shape[1]:
+                    # Repeat mask channels to match image channels
+                    masks = masks.repeat(1, images.shape[1] // masks.shape[1], 1, 1, 1)
+        
+        print(f"After adjustment - Images: {images.shape}, Masks: {masks.shape}")
         masked_images = images * (1-masks)
 
         latents_mean = (
