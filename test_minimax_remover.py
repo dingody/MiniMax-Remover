@@ -22,13 +22,16 @@ pipe = Minimax_Remover_Pipeline(transformer=transformer, vae=vae, scheduler=sche
 pipe.to(device)
 
 # the iterations is the hyperparameter for mask dilation
-def inference(pixel_values, masks, video_length, iterations=1):
-    # For 720x1280 video (width x height), use higher resolution for better quality
+def inference(pixel_values, masks, video_length, output_fps, iterations=0):
+    # For 720x1280 video (width x height), balance quality vs memory
     # Keep aspect ratio: 720/1280 = 0.5625
-    # Balance between quality and L4 GPU memory
-    width = 576   # Increased from 512, closer to original 720
-    height = int(576 / 0.5625)  # = 1024, exact match for aspect ratio
-    height = 1024  # Better match for original 1280
+    # Use moderate resolution for L4 GPU
+    width = 480   # Reduced for better performance
+    height = int(480 / 0.5625)  # = 853, round to 864
+    height = 864  # Better memory usage while maintaining aspect ratio
+    
+    print(f"Processing with resolution: {width}x{height}")
+    print(f"Mask dilation iterations: {iterations}")
     
     video = pipe(
         images=pixel_values,
@@ -36,12 +39,14 @@ def inference(pixel_values, masks, video_length, iterations=1):
         num_frames=video_length,
         height=height,
         width=width,
-        num_inference_steps=6,  # Reduced from 12 to 6 for speed
+        num_inference_steps=4,  # Further reduced for speed
         generator=torch.Generator(device=device).manual_seed(random_seed),
-        iterations=iterations  # Reduced from 6 to 2
+        iterations=iterations  # Try 0 iterations for minimal dilation
     ).frames[0]
-    # Export with proper fps to maintain video duration
-    export_to_video(video, "/content/output_fixed.mp4", fps=25)
+    
+    # Export with calculated fps to maintain original duration
+    print(f"Exporting video with fps: {output_fps:.2f}")
+    export_to_video(video, "/content/output_fixed.mp4", fps=output_fps)
 
 def load_video(video_path, max_frames=None):
     vr = VideoReader(video_path)
@@ -50,10 +55,10 @@ def load_video(video_path, max_frames=None):
     duration = total_frames / fps
     print(f"Video info: {total_frames} frames, {fps:.2f} fps, {duration:.2f}s duration")
     
-    # For L4 GPU, increase frame limit but keep it reasonable
+    # For L4 GPU, be more conservative with frame count
     if max_frames is None:
-        # Allow more frames to preserve video length better
-        max_frames = min(120, total_frames)  # Increased from 60 to 120
+        # Reduce frames but calculate proper output fps to maintain duration
+        max_frames = min(90, total_frames)  # Reduced from 120 to 90
     
     # Sample frames more evenly to preserve timing
     if total_frames > max_frames:
@@ -63,12 +68,16 @@ def load_video(video_path, max_frames=None):
     else:
         frame_indices = list(range(total_frames))
     
+    # Calculate the output fps needed to maintain original duration
+    output_fps = len(frame_indices) / duration
+    
     print(f"Sampling {len(frame_indices)} frames from {total_frames} total frames")
+    print(f"Output fps should be: {output_fps:.2f} to maintain {duration:.2f}s duration")
     print(f"Frame indices: {frame_indices[:5]}...{frame_indices[-5:] if len(frame_indices) > 5 else ''}")
     
     images = vr.get_batch(frame_indices).asnumpy()
     images = torch.from_numpy(images)/127.5 - 1.0
-    return images, len(frame_indices), frame_indices
+    return images, len(frame_indices), frame_indices, output_fps
 
 def load_mask(mask_path, frame_indices):
     vr = VideoReader(mask_path)
@@ -90,7 +99,7 @@ def load_mask(mask_path, frame_indices):
     return masks
 
 # Load video with dynamic frame count
-images, video_length, frame_indices = load_video(video_path)
+images, video_length, frame_indices, output_fps = load_video(video_path)
 print(f"Loaded video with {video_length} frames, shape: {images.shape}")
 
 # Load corresponding masks
@@ -110,4 +119,6 @@ try:
 except Exception as e:
     print(f"Memory optimization not available: {e}")
 
-inference(images, masks, video_length)
+# Try different mask dilation settings for text removal
+print("Starting inference...")
+inference(images, masks, video_length, output_fps)
