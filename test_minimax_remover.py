@@ -22,13 +22,12 @@ pipe = Minimax_Remover_Pipeline(transformer=transformer, vae=vae, scheduler=sche
 pipe.to(device)
 
 # the iterations is the hyperparameter for mask dilation
-def inference(pixel_values, masks, video_length, output_fps, iterations=0):
-    # For 720x1280 video (width x height), balance quality vs memory
+def inference(pixel_values, masks, video_length, output_fps, iterations=3):
+    # Back to working resolution and parameters
     # Keep aspect ratio: 720/1280 = 0.5625
-    # Use moderate resolution for L4 GPU
-    width = 480   # Reduced for better performance
-    height = int(480 / 0.5625)  # = 853, round to 864
-    height = 864  # Better memory usage while maintaining aspect ratio
+    width = 512   # Back to previous working resolution
+    height = int(512 / 0.5625)  # = 910, round to 896
+    height = 896  # Previous working resolution
     
     print(f"Processing with resolution: {width}x{height}")
     print(f"Mask dilation iterations: {iterations}")
@@ -39,14 +38,15 @@ def inference(pixel_values, masks, video_length, output_fps, iterations=0):
         num_frames=video_length,
         height=height,
         width=width,
-        num_inference_steps=4,  # Further reduced for speed
+        num_inference_steps=6,  # Back to working step count
         generator=torch.Generator(device=device).manual_seed(random_seed),
-        iterations=iterations  # Try 0 iterations for minimal dilation
+        iterations=iterations  # Back to working iterations
     ).frames[0]
     
-    # Export with calculated fps to maintain original duration
-    print(f"Exporting video with fps: {output_fps:.2f}")
-    export_to_video(video, "/content/output_fixed.mp4", fps=output_fps)
+    # Clamp fps to reasonable range
+    safe_fps = max(15, min(30, output_fps))  # Ensure fps is in reasonable range
+    print(f"Exporting video with fps: {safe_fps:.2f} (calculated: {output_fps:.2f})")
+    export_to_video(video, "/content/output_fixed.mp4", fps=safe_fps)
 
 def load_video(video_path, max_frames=None):
     vr = VideoReader(video_path)
@@ -57,8 +57,8 @@ def load_video(video_path, max_frames=None):
     
     # For L4 GPU, be more conservative with frame count
     if max_frames is None:
-        # Reduce frames but calculate proper output fps to maintain duration
-        max_frames = min(90, total_frames)  # Reduced from 120 to 90
+        # Back to safer frame count
+        max_frames = min(60, total_frames)  # Back to 60 frames for stability
     
     # Sample frames more evenly to preserve timing
     if total_frames > max_frames:
