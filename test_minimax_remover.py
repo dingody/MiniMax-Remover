@@ -23,12 +23,12 @@ pipe.to(device)
 
 # the iterations is the hyperparameter for mask dilation
 def inference(pixel_values, masks, video_length, iterations=2):
-    # For 720x1280 video, use appropriate resolution
+    # For 720x1280 video (width x height), use appropriate resolution
     # Keep aspect ratio: 720/1280 = 0.5625
     # Use smaller resolution for L4 GPU
-    height = 512
-    width = int(512 / 0.5625)  # = 910, round to 896 for efficiency
-    width = 896
+    width = 512   # Corresponding to original width 720
+    height = int(512 / 0.5625)  # = 910, round to 896 for efficiency  
+    height = 896  # Corresponding to original height 1280
     
     video = pipe(
         images=pixel_values,
