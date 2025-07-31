@@ -98,11 +98,17 @@ else:
 masks = load_mask(mask_path, frame_indices)
 print(f"Loaded masks with shape: {masks.shape}")
 
-# Add optimization: enable model CPU offloading for L4 GPU
+# For L4 GPU with 22.5GB VRAM, try CPU offloading carefully
+# If it causes device issues, we'll disable it
 try:
-    pipe.enable_model_cpu_offload()
-    print("Enabled model CPU offloading")
-except:
-    print("CPU offloading not available")
+    # Use attention slicing instead of full CPU offloading
+    pipe.enable_attention_slicing()
+    print("Enabled attention slicing for memory optimization")
+    
+    # Optionally try CPU offloading (comment out if it causes issues)
+    # pipe.enable_model_cpu_offload()
+    # print("Enabled model CPU offloading")
+except Exception as e:
+    print(f"Memory optimization not available: {e}")
 
 inference(images, masks, video_length)

@@ -147,21 +147,21 @@ class Minimax_Remover_Pipeline(DiffusionPipeline):
         )
 
         masks = self.expand_masks(masks, iterations)
-        masks = self.resize(masks, height, width).to("cuda:0").half()
+        masks = self.resize(masks, height, width).to(device).half()
         masks[masks>0] = 1
         images = rearrange(images, "f h w c -> c f h w")
-        images = self.resize(images[None,...], height, width).to("cuda:0").half()
+        images = self.resize(images[None,...], height, width).to(device).half()
 
         masked_images = images * (1-masks)
 
         latents_mean = (
                 torch.tensor(self.vae.config.latents_mean)
                 .view(1, self.vae.config.z_dim, 1, 1, 1)
-                .to(self.vae.device, torch.float16)
+                .to(device, torch.float16)
             )
 
         latents_std =  1.0 / torch.tensor(self.vae.config.latents_std).view(1, self.vae.config.z_dim, 1, 1, 1).to(
-                self.vae.device, torch.float16
+                device, torch.float16
             )
 
         with torch.no_grad():
